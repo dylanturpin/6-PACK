@@ -1,0 +1,14 @@
+defaults:
+  - dataset: hammers
+
+resume: ''        # path to model checkpoint to resume
+workers: 1
+num_kp: 8
+outf: 'models/'
+lr: 0.0001
+num_cates: 1
+category: 1       # category to train
+num_points: 500   # number of point-cloud points in input
+
+
+#  /opt/conda/envs/6pack/bin/python scripts/train.py

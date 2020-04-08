@@ -1,5 +1,7 @@
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 import argparse
-import os
 import random
 import time
 import numpy as np
@@ -21,7 +23,7 @@ import copy
 choose_cate_list = [1,2,3,4,5,6]
 resume_models = ['model_112_0.184814792342484_bottle.pth',
                  'model_120_0.10268432162888348_bowl.pth',
-                 'model_118_0.2008235973417759_camera.pth', 
+                 'model_118_0.2008235973417759_camera.pth',
                  'model_107_0.18291547849029302_can.pth',
                  'model_117_0.12762234719470145_laptop.pth',
                  'model_102_0.1468337191492319_mug.pth']
@@ -73,7 +75,7 @@ for choose_cate in choose_cate_list:
 
             if opt.ite != 0:
                 min_dis = 1000.0
-                for iterative in range(opt.ite):  
+                for iterative in range(opt.ite):
                     img_fr, choose_fr, cloud_fr, anchor, scale = test_dataset.getone(current_r, current_t)
                     img_fr, choose_fr, cloud_fr, anchor, scale = Variable(img_fr).cuda(), \
                                                          Variable(choose_fr).cuda(), \

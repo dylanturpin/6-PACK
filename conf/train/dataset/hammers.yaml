@@ -1,0 +1,11 @@
+dataset:
+  class: dataset.dataset_hammers.Dataset
+  params:
+    dataset_root: '/h/dturpin/datasets/pretrain_6pack/'
+    train_task_ids:
+      - 39
+    val_task_ids:
+      - 39
+    # following are set by script based on main config
+    set_name: None
+    num_points: None

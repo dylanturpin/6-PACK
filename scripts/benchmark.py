@@ -1,4 +1,6 @@
-import os
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 import glob
 import numpy as np
 import math
@@ -8,11 +10,11 @@ pred_data = "eval_results/TEST_"
 pred_list = [1]      # eval_id list, if you want to test the mean score of TEST_1 and TEST_2, change to [1,2]
 data_dir = "My_NOCS"
 
-synset_names = ['BG', 
-                'bottle', 
-                'bowl', 
-                'camera', 
-                'can',  
+synset_names = ['BG',
+                'bottle',
+                'bowl',
+                'camera',
+                'can',
                 'laptop',
                 'mug'
                 ]
@@ -47,12 +49,12 @@ def compute_3d_iou_new(RT_1, RT_2, noc_cube_1, noc_cube_2, handle_visibility, cl
 
     symmetry_flag = False
     if (class_name_1 in ['bottle', 'bowl', 'can'] and class_name_1 == class_name_2) or (class_name_1 == 'mug' and class_name_1 == class_name_2 and handle_visibility==0):
-    
+
         bbox_3d_2 = transform_coordinates_3d(noc_cube_2, RT_2)
 
         def y_rotation_matrix(theta):
             return np.array([[np.cos(theta), 0, np.sin(theta), 0],
-                             [0, 1, 0 , 0], 
+                             [0, 1, 0 , 0],
                              [-np.sin(theta), 0, np.cos(theta), 0],
                              [0, 0, 0 , 1]])
 
@@ -60,19 +62,19 @@ def compute_3d_iou_new(RT_1, RT_2, noc_cube_1, noc_cube_2, handle_visibility, cl
         max_iou = 0
         for i in range(n):
             rotated_RT_1 = RT_1@y_rotation_matrix(2*math.pi*i/float(n))
-            max_iou = max(max_iou, 
+            max_iou = max(max_iou,
                           asymmetric_3d_iou(rotated_RT_1, RT_2, noc_cube_1, noc_cube_2))
     else:
         max_iou = asymmetric_3d_iou(RT_1, RT_2, noc_cube_1, noc_cube_2)
-    
+
     return max_iou
 
 def transform_coordinates_3d(coordinates, RT):
     """
-    Input: 
+    Input:
         coordinates: [3, N]
         RT: [4, 4]
-    Return 
+    Return
         new_coordinates: [3, N]
     """
     assert coordinates.shape[0] == 3
@@ -183,7 +185,7 @@ def main():
                         scene_num = scene_num + 1
                         if not os.path.exists(pred_path):
                             print(pred_path)
-                            continue 
+                            continue
                         obj_path = gt_path.replace("pose", "obj")
                         ins_id = -1
                         num_idx = 0
@@ -260,7 +262,7 @@ def main():
     print("Mean tran error: ",np.mean(np.array(all_trans_err)/10,0)[-1])
     #print(score_dict)
     print("********************************************************")
-        
+
 
 if __name__ == "__main__":
-    main() 
+    main()

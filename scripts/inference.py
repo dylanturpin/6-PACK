@@ -1,5 +1,7 @@
+import os, sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+
 import argparse
-import os
 import random
 import time
 import numpy as np
@@ -18,15 +20,15 @@ from libs.tracker import tracker
 import math
 
 #start and end frame
-st = 
-ed = 
+st =
+ed =
 
 # category id
-category_id = 
+category_id =
 tracker = tracker(category_id)
 
 # provide the initial pose and scale of the object
-current_r, current_t, bbox = 
+current_r, current_t, bbox =
 
 img_dir = 'rgb/{0}.png'.format(st)
 depth_dir = 'depth/{0}.npy'.format(st)
