@@ -16,10 +16,12 @@ RUN /opt/conda/bin/conda create -n 6pack python=3.7
 RUN /opt/conda/bin/conda install -n 6pack -c conda-forge scipy pip
 RUN /opt/conda/bin/conda run -n 6pack pip install --upgrade pip
 RUN /opt/conda/bin/conda run -n 6pack pip install \
+  cffi \
   torch==0.4.1.post2 \
   torchvision==0.2.1 \
+  opencv-python \
   pillow==6.1 \
-  opencv-python
+  pyquaternion
 RUN mkdir /pkgs &&\
   cd /pkgs &&\
   git clone https://github.com/dylanturpin/hydra &&\
