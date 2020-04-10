@@ -16,3 +16,10 @@ checkpoint_every_n_samples: 100
 
 
 #  /opt/conda/envs/6pack/bin/python scripts/train.py
+loss_term_weights:
+  loss_att_weight: 4.0
+  Kp_dis_weight: 3.0
+  Kp_cent_dis_weight: 1.0
+  loss_rot_weight: 0.2
+  loss_surf_weight: 3.0
+  loss_sep_weight: 1.0

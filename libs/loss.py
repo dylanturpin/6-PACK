@@ -13,7 +13,7 @@ import torch.distributions as tdist
 import copy
 
 class Loss(_Loss):
-    def __init__(self, num_key, num_cate):
+    def __init__(self, num_key, num_cate, loss_weights):
         super(Loss, self).__init__(True)
         self.num_key = num_key
         self.num_cate = num_cate
@@ -34,6 +34,14 @@ class Loss(_Loss):
         self.select2 = torch.tensor([(i%num_key) for j in range(1, num_key) for i in range(j, j+num_key)]).cuda()
 
         self.knn = KNearestNeighbor(1)
+
+        self.loss_att_weight = loss_weights['loss_att_weight']
+        self.Kp_dis_weight = loss_weights['Kp_dis_weight']
+        self.Kp_cent_dis_weight = loss_weights['Kp_cent_dis_weight']
+        self.loss_rot_weight = loss_weights['loss_rot_weight']
+        self.loss_surf_weight = loss_weights['loss_surf_weight']
+        self.loss_sep_weight = loss_weights['loss_sep_weight']
+
 
     def estimate_rotation(self, pt0, pt1, sym_or_not):
         pconf2 = self.pconf.view(1, self.num_key, 1)
@@ -92,7 +100,7 @@ class Loss(_Loss):
     def change_to_ver(self, Kp):
         pconf2 = self.pconf.view(1, self.num_key, 1)
         cent0 = torch.sum(Kp * pconf2, dim=1).view(-1).contiguous()
-        
+
         num_kp = self.num_key
         ver_Kp_1 = Kp[:, :, 1].view(1, num_kp, 1).contiguous()
 
@@ -217,11 +225,33 @@ class Loss(_Loss):
 
         ########### SUM UP
 
-        loss = loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2 + loss_surf * 3.0 + loss_sep
+
+        loss_att_scaled = self.loss_att_weight * loss_att
+        Kp_dis_scaled = self.Kp_dis_weight * Kp_dis
+        Kp_cent_dis_scaled = self.Kp_cent_dis_weight * Kp_cent_dis
+        loss_rot_scaled = self.loss_rot_weight * loss_rot
+        loss_surf_scaled = self.loss_surf_weight * loss_surf
+        loss_sep_scaled = self.loss_sep_weight * loss_sep
+        loss = loss_att_scaled + Kp_dis_scaled + Kp_cent_dis_scaled + loss_rot_scaled + loss_surf_scaled + loss_sep_scaled
+
         score = (loss_att * 4.0 + Kp_dis * 3.0 + Kp_cent_dis + loss_rot * 0.2).item()
+        losses_dict = {
+            'loss': loss,
+            'loss_att': loss_att,
+            'Kp_dis': Kp_dis,
+            'Kp_cent_dis': Kp_cent_dis,
+            'loss_rot': loss_rot,
+            'loss_surf': loss_surf,
+            'loss_sep': loss_sep,
+            'loss_att_scaled': loss_att_scaled,
+            'Kp_dis_scaled': Kp_dis_scaled,
+            'Kp_cent_dis_scaled': Kp_cent_dis_scaled,
+            'loss_rot_scaled': loss_rot_scaled,
+            'loss_surf_scaled': loss_surf_scaled,
+            'loss_sep_scaled': loss_sep_scaled}
         print(cate.view(-1).item(), loss_att.item(), Kp_dis.item(), Kp_cent_dis.item(), loss_rot.item(), loss_surf.item(), loss_sep)
 
-        return loss, score
+        return loss, score, losses_dict
 
 
     def ev(self, Kp_fr, Kp_to, att_to):

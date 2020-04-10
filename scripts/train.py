@@ -42,7 +42,7 @@ def main(config):
     test_dataset = hydra.utils.instantiate(config.dataset, set_name='val', num_points=config.num_points)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=config.workers)
 
-    criterion = Loss(config.num_kp, config.num_cates)
+    criterion = Loss(config.num_kp, config.num_cates, config.loss_term_weights)
 
     best_test = np.Inf
     optimizer = optim.Adam(model.parameters(), lr=config.lr)
@@ -51,6 +51,7 @@ def main(config):
     for epoch in range(0, config.n_epochs):
         model.train()
         train_dis_avg = 0.0
+        train_losses_dict_avg = {}
 
         optimizer.zero_grad()
 
@@ -76,7 +77,11 @@ def main(config):
             Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
             Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
 
-            loss, _ = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+            loss, _, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+            for k, v in losses_dict.items():
+                if k not in train_losses_dict_avg:
+                    train_losses_dict_avg[k] = 0.0
+                train_losses_dict_avg[k] += v.cpu().detach()
             loss.backward()
 
             train_dis_avg += loss.item()
@@ -86,8 +91,12 @@ def main(config):
                 optimizer.step()
                 optimizer.zero_grad()
                 print(train_count, float(train_dis_avg) / config.log_every_n_samples)
-                wandb.log({'train_loss': float(train_dis_avg) / config.log_every_n_samples}, step=train_count)
+                log_dict = {}
+                for k, v in train_losses_dict_avg.items():
+                    log_dict['train_'+k] = v / config.log_every_n_samples
+                wandb.log(log_dict, step=train_count)
                 train_dis_avg = 0.0
+                train_losses_dict_avg = {}
 
             if train_count != 0 and train_count % config.checkpoint_every_n_samples == 0:
                 fname = os.path.join(config.outf, 'model_at_step_{0}.pth'.format(train_count))
@@ -101,6 +110,7 @@ def main(config):
         optimizer.zero_grad()
         model.eval()
         score = []
+        val_losses_dict_avg = {}
         for j, data in enumerate(testdataloader, 0):
             img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = data
             img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = Variable(img_fr).cuda(), \
@@ -121,13 +131,23 @@ def main(config):
             Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
             Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
 
-            _, item_score = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+            _, item_score, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+            for k, v in losses_dict.items():
+                if k not in val_losses_dict_avg:
+                    val_losses_dict_avg[k] = 0.0
+                val_losses_dict_avg[k] += v.cpu().detach()
+
 
             print(item_score)
             score.append(item_score)
 
         test_dis = np.mean(np.array(score))
-        wandb.log({'val_loss': test_dis}, step=train_count)
+        log_dict = {}
+        for k, v in val_losses_dict_avg.items():
+            log_dict['val_'+k] = v / config.log_every_n_samples
+        wandb.log(log_dict, step=train_count)
+        val_losses_dict_avg = {}
+
 
 if __name__ == "__main__":
     main()
