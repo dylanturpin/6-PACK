@@ -27,11 +27,20 @@ cate_list = ['bottle', 'bowl', 'camera', 'can', 'laptop', 'mug']
 def main(config):
     wandb.init(project="6pack", config=config, resume=True)
 
+    if wandb.run.resumed:
+        print(f'resuming! at step: {wandb.run.step}')
+        config.resume_ckpt = os.path.join(config.outf, 'model_latest.pth')
+        config.resume_ckpt_opt_state = os.path.join(config.outf, 'optim_state_latest.pth')
+
     model = KeyNet(num_points = config.num_points, num_key = config.num_kp, num_cates = config.num_cates)
     model.cuda()
 
-    if config.resume != '':
-        model.load_state_dict(torch.load('{0}/{1}'.format(config.outf, config.resume)))
+    optimizer = optim.Adam(model.parameters(), lr=config.lr)
+
+    if config.resume_ckpt != '':
+        model.load_state_dict(torch.load(config.resume_ckpt))
+        optimizer_state_dict = torch.load(config.resume_ckpt_opt_state)
+        optimizer.load_state_dict(optimizer_state_dict)
 
     # dataset init
 
@@ -44,11 +53,14 @@ def main(config):
 
     criterion = Loss(config.num_kp, config.num_cates, config.loss_term_weights)
 
-    best_test = np.Inf
-    optimizer = optim.Adam(model.parameters(), lr=config.lr)
+    start_count = 0
+    start_epoch = 0
+    if wandb.run.resumed:
+        start_count = wandb.run.step
+        start_epoch = wandb.run.step // len(dataloader)
 
-    train_count = 0
-    for epoch in range(0, config.n_epochs):
+    train_count = start_count
+    for epoch in range(start_epoch, config.n_epochs):
         model.train()
         train_dis_avg = 0.0
         train_losses_dict_avg = {}
@@ -76,6 +88,15 @@ def main(config):
 
             Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
             Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
+
+            Kp_fr *= config.scale_loss_inputs_by
+            Kp_to *= config.scale_loss_inputs_by
+            anc_fr *= config.scale_loss_inputs_by
+            anc_to *= config.scale_loss_inputs_by
+            t_fr *= config.scale_loss_inputs_by
+            t_to *= config.scale_loss_inputs_by
+            mesh *= config.scale_loss_inputs_by
+            scale *= config.scale_loss_inputs_by
 
             loss, _, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
             for k, v in losses_dict.items():
@@ -130,6 +151,14 @@ def main(config):
 
             Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
             Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
+            Kp_fr *= config.scale_loss_inputs_by
+            Kp_to *= config.scale_loss_inputs_by
+            anc_fr *= config.scale_loss_inputs_by
+            anc_to *= config.scale_loss_inputs_by
+            t_fr *= config.scale_loss_inputs_by
+            t_to *= config.scale_loss_inputs_by
+            mesh *= config.scale_loss_inputs_by
+            scale *= config.scale_loss_inputs_by
 
             _, item_score, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
             for k, v in losses_dict.items():

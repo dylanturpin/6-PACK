@@ -3,7 +3,8 @@ defaults:
   - dataset: hammers
 
 n_epochs: 500
-resume: ''        # path to model checkpoint to resume
+resume_ckpt: ''        # path to model checkpoint to resume
+resume_ckpt_opt_state: ''
 workers: 1
 num_kp: 8
 outf: '/root/checkpoint'
@@ -12,16 +13,18 @@ num_cates: 1
 category: 1       # category to train
 num_points: 500   # number of point-cloud points in input
 
-log_every_n_samples: 10
-checkpoint_every_n_samples: 100
+log_every_n_samples: 9
+checkpoint_every_n_samples: 99
 
 loss_term_weights:
-  loss_att_weight: 4.0
+  loss_att_weight: 0.
   Kp_dis_weight: 3.0
-  Kp_cent_dis_weight: 1.0
+  Kp_cent_dis_weight: 0.
   loss_rot_weight: 0.2
   loss_surf_weight: 3.0
   loss_sep_weight: 1.0
+
+scale_loss_inputs_by: 0.1
 
 slurm_additional:
   wandb_dir: '/root/checkpoint'
