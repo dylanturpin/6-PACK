@@ -1,11 +1,12 @@
 defaults:
+  - hydra/launcher: slurm
   - dataset: hammers
 
 n_epochs: 500
 resume: ''        # path to model checkpoint to resume
 workers: 1
 num_kp: 8
-outf: '/h/dturpin/repos/6-PACK/models/'
+outf: '/root/checkpoint'
 lr: 0.0001
 num_cates: 1
 category: 1       # category to train
@@ -14,8 +15,6 @@ num_points: 500   # number of point-cloud points in input
 log_every_n_samples: 10
 checkpoint_every_n_samples: 100
 
-
-#  /opt/conda/envs/6pack/bin/python scripts/train.py
 loss_term_weights:
   loss_att_weight: 4.0
   Kp_dis_weight: 3.0
@@ -23,3 +22,26 @@ loss_term_weights:
   loss_rot_weight: 0.2
   loss_surf_weight: 3.0
   loss_sep_weight: 1.0
+
+slurm_additional:
+  wandb_dir: '/root/checkpoint'
+  python_bin: '/opt/conda/envs/6pack/bin/python'
+
+slurm:
+  gres: gpu:1
+  job_name:
+    - 6pack
+  partition: gpu
+  cpus_per_task: 4
+  ntasks_per_node: 1
+  mem: 22G
+  nodes: 1
+  qos: normal
+
+singularity:
+  bin_path: '/h/dturpin/pkgs/bin/singularity'
+  sbox_path: '/h/dturpin/img/6pack_sbox'
+  binds:
+    - '/checkpoint/dturpin/$SLURM_JOB_ID:/root/checkpoint'
+
+exec_path: '/h/dturpin/repos/6-PACK/scripts/train.py'
