@@ -21,7 +21,8 @@ RUN /opt/conda/bin/conda run -n 6pack pip install \
   torchvision==0.2.1 \
   opencv-python \
   pillow==6.1 \
-  pyquaternion
+  pyquaternion \
+  wandb
 RUN mkdir /pkgs &&\
   cd /pkgs &&\
   git clone https://github.com/dylanturpin/hydra &&\

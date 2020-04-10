@@ -1,14 +1,18 @@
 defaults:
   - dataset: hammers
 
+n_epochs: 500
 resume: ''        # path to model checkpoint to resume
 workers: 1
 num_kp: 8
-outf: 'models/'
+outf: '/h/dturpin/repos/6-PACK/models/'
 lr: 0.0001
 num_cates: 1
 category: 1       # category to train
 num_points: 500   # number of point-cloud points in input
+
+log_every_n_samples: 10
+checkpoint_every_n_samples: 100
 
 
 #  /opt/conda/envs/6pack/bin/python scripts/train.py

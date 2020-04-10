@@ -92,12 +92,14 @@ class Dataset(Dataset):
         table_val, _ = torch.mode(torch.flatten(depth),0)
 
         if self.xmap is None:
-            # row
-            self.xmap = torch.tensor([[j for i in range(height)] for j in range(height)], dtype=torch.float)
-            # col
-            self.ymap = torch.tensor([[i for i in range(width)] for j in range(width)], dtype=torch.float)
+            self.xmap = torch.tensor([[j for i in range(width)] for j in range(height)], dtype=torch.float)
+            self.ymap = torch.tensor([[i for i in range(width)] for j in range(height)], dtype=torch.float)
 
-        choose = (torch.flatten(depth) < table_val).nonzero().flatten()
+        # ducktape fix to filter blue box out of point cloud
+        choose_mask = (depth < table_val )
+        choose_mask[164:,:31] = 0
+        choose = torch.flatten(choose_mask).nonzero().flatten()
+        #choose = (torch.flatten(depth) < table_val).nonzero().flatten()
 
         # take random 500 points
         idx = np.random.choice(choose.shape[0], size=500)
@@ -107,28 +109,30 @@ class Dataset(Dataset):
         xmap_masked = self.xmap.flatten()[choose]
         ymap_masked = self.ymap.flatten()[choose]
 
-        fovy = 35.0
+        fovy = 45.0
+        #f = height / math.tan(fovy * math.pi / 360)
+        # should be height from ground not ... pixels???
         f = height / math.tan(fovy * math.pi / 360)
+        cam_scale = 0.1
+        f /= cam_scale
         cam = np.array(((f, 0, width / 2), (0, f, height / 2), (0, 0, 1)))
         cx = height/2
         cy = width/2
-        cam_scale = 1.0
 
         pt2 = depth_masked / cam_scale
+        #pt2 = depth_masked / 0.1
         pt0 = (ymap_masked - cx) * pt2 / f
         pt1 = (xmap_masked - cy) * pt2 / f
 
-        pt2 = pt2/0.1
-        cloud = torch.cat((pt1[:,None], pt0[:,None], pt2[:,None]), dim=1)
+        #pt2 = pt2/0.1
+        cloud = torch.cat((pt1[:,None], -pt0[:,None], pt2[:,None]), dim=1)
 
         # turn depths into coords by subtracting from camera
         # -0.13 0.6 0.6
         # 0 0.55 0.48
-        cloud[:,0] = 0.575 + cloud[:,0]
-        cloud[:,1] = 0.0125 + cloud[:,1]
-        cloud[:,2] = (table_val/0.1) - cloud[:,2]
-        cloud = cloud[:,[1,0,2]]
-
+        cloud[:,0] = 0. + cloud[:,0]
+        cloud[:,1] = 0.6 + cloud[:,1]
+        cloud[:,2] = (table_val/0.1) - cloud[:,2] + 0.02
 
         choose = choose.view(1,-1)
         return choose, cloud
@@ -142,7 +146,6 @@ class Dataset(Dataset):
         return vid_idx, frame_idx
 
 
-
     def __getitem__(self, index):
         vid_idx, frame_idx = self.get_frame_index(index)
 
@@ -154,10 +157,12 @@ class Dataset(Dataset):
         # img
         img_fr = np.array(Image.open(rgb_path_fr)).transpose((2,0,1))
         img_fr = torch.Tensor(img_fr)
-        depth_fr = torch.Tensor(np.array(Image.open(depth_path_fr)))
+        depth_fr = np.array(Image.open(depth_path_fr))
+        depth_fr = torch.Tensor(depth_fr.copy())
         img_to = np.array(Image.open(rgb_path_to)).transpose((2,0,1))
         img_to = torch.Tensor(img_to)
-        depth_to = torch.Tensor(np.array(Image.open(depth_path_to)))
+        depth_to = np.array(Image.open(depth_path_to))
+        depth_to = torch.Tensor(depth_to.copy())
 
         # get point cloud
         choose_fr, cloud_fr = self._get_point_cloud(depth_fr)
@@ -183,6 +188,7 @@ class Dataset(Dataset):
 
         # mesh
         mesh = torch.Tensor(self.vert[vid_idx][frame_idx,:,:])
+        mesh_orig = mesh.clone()
         # return mesh to canonical pose
         mesh = torch.mm(mesh - t_fr[None,:], r_fr)
         faces = torch.LongTensor(self.faces[vid_idx])

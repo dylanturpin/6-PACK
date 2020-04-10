@@ -1,6 +1,7 @@
 import os, sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
+import wandb
 import argparse
 import random
 import time
@@ -24,6 +25,8 @@ cate_list = ['bottle', 'bowl', 'camera', 'can', 'laptop', 'mug']
 
 @hydra.main(config_path='../conf/train/config.yaml')
 def main(config):
+    wandb.init(project="6pack", config=config, resume=True)
+
     model = KeyNet(num_points = config.num_points, num_key = config.num_kp, num_cates = config.num_cates)
     model.cuda()
 
@@ -44,10 +47,10 @@ def main(config):
     best_test = np.Inf
     optimizer = optim.Adam(model.parameters(), lr=config.lr)
 
-    for epoch in range(0, 500):
+    train_count = 0
+    for epoch in range(0, config.n_epochs):
         model.train()
         train_dis_avg = 0.0
-        train_count = 0
 
         optimizer.zero_grad()
 
@@ -79,15 +82,21 @@ def main(config):
             train_dis_avg += loss.item()
             train_count += 1
 
-            if train_count != 0 and train_count % 8 == 0:
+            if train_count != 0 and train_count % config.log_every_n_samples == 0:
                 optimizer.step()
                 optimizer.zero_grad()
-                print(train_count, float(train_dis_avg) / 8.0)
+                print(train_count, float(train_dis_avg) / config.log_every_n_samples)
+                wandb.log({'train_loss': float(train_dis_avg) / config.log_every_n_samples}, step=train_count)
                 train_dis_avg = 0.0
 
-            if train_count != 0 and train_count % 100 == 0:
-                torch.save(model.state_dict(), '{0}/model_current_{1}.pth'.format(config.outf, cate_list[config.category-1]))
-
+            if train_count != 0 and train_count % config.checkpoint_every_n_samples == 0:
+                fname = os.path.join(config.outf, 'model_at_step_{0}.pth'.format(train_count))
+                torch.save(model.state_dict(), fname)
+                wandb.save(fname)
+                fname = os.path.join(config.outf, 'model_latest.pth')
+                torch.save(model.state_dict(), fname)
+                fname = os.path.join(config.outf, 'optim_state_latest.pth')
+                torch.save(optimizer.state_dict(), fname)
 
         optimizer.zero_grad()
         model.eval()
@@ -118,10 +127,7 @@ def main(config):
             score.append(item_score)
 
         test_dis = np.mean(np.array(score))
-        if test_dis < best_test:
-            best_test = test_dis
-            torch.save(model.state_dict(), '{0}/model_{1}_{2}_{3}.pth'.format(config.outf, epoch, test_dis, cate_list[config.category-1]))
-            print(epoch, '>>>>>>>>----------BEST TEST MODEL SAVED---------<<<<<<<<')
+        wandb.log({'val_loss': test_dis}, step=train_count)
 
 if __name__ == "__main__":
     main()
