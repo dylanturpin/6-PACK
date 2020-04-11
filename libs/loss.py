@@ -57,11 +57,19 @@ class Loss(_Loss):
         cov = torch.bmm(torch.bmm(x, diag_mat), y).contiguous().squeeze(0)
 
         #u, _, v = torch.svd(cov)
-        svd = GESVD()
         dev = cov.device
-        u, _, v = svd(cov.cpu())
-        u = u.to(dev)
-        v = v.to(dev)
+        trivial_solution = torch.tensor(0.)
+        try:
+            svd = GESVD()
+            u, _, v = svd(cov.cpu())
+            u = u.to(dev)
+            v = v.to(dev)
+        except:
+            print('---- svd ERROR, using trivial solution -----')
+            u = torch.eye(cov.shape[0]).to(dev)
+            v = torch.eye(cov.shape[0]).to(dev)
+            trivial_solution = torch.tensor(1.)
+
 
         u = u.transpose(1, 0).contiguous()
         d = torch.det(torch.mm(v, u)).contiguous().view(1, 1, 1).contiguous()
@@ -75,7 +83,7 @@ class Loss(_Loss):
         if sym_or_not:
             pred_r = torch.bmm(pred_r, self.sym_axis).contiguous().view(-1).contiguous()
 
-        return pred_r
+        return pred_r, trivial_solution
 
     def estimate_pose(self, pt0, pt1):
         pconf2 = self.pconf.view(1, self.num_key, 1)
@@ -174,7 +182,7 @@ class Loss(_Loss):
             loss_rot = (torch.acos(torch.sum(pred_r * rot) / (torch.norm(pred_r) * torch.norm(rot)))).contiguous()
             loss_rot = loss_rot
         else:
-            pred_r = self.estimate_rotation(rot_Kp_fr, rot_Kp_to, sym_or_not)
+            pred_r, trivial_svd_solution = self.estimate_rotation(rot_Kp_fr, rot_Kp_to, sym_or_not)
             frob_sqr = torch.sum(((pred_r - rot) * (pred_r - rot)).view(-1)).contiguous()
             frob = torch.sqrt(frob_sqr).unsqueeze(0).contiguous()
             cc = torch.cat([self.oneone, frob / (2 * math.sqrt(2))]).contiguous()
@@ -234,6 +242,7 @@ class Loss(_Loss):
             'Kp_dis': Kp_dis,
             'Kp_cent_dis': Kp_cent_dis,
             'loss_rot': loss_rot,
+            'trivial_svd_solution': trivial_svd_solution,
             'loss_surf': loss_surf,
             'loss_sep': loss_sep,
             'loss_att_scaled': loss_att_scaled,

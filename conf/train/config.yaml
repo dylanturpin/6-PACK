@@ -14,7 +14,7 @@ category: 1       # category to train
 num_points: 500   # number of point-cloud points in input
 
 log_every_n_samples: 99
-checkpoint_every_n_samples: 990
+checkpoint_every_n_samples: 9900
 
 loss_term_weights:
   loss_att_weight: 0.
