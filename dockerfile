@@ -24,7 +24,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update -y &&\
   libxrender-dev \
   software-properties-common \
   wget
-  
+
 # update libstdc++6
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test &&\
   DEBIAN_FRONTEND=noninteractive apt-get update -y &&\
@@ -81,3 +81,9 @@ RUN cd /pkgs/PyMesh &&\
   /opt/conda/bin/conda run -n 6pack ./setup.py build
 RUN cd /pkgs/PyMesh &&\
   /opt/conda/bin/conda run -n 6pack  ./setup.py install
+
+# apex
+RUN cd /pkgs &&\
+  git clone https://github.com/NVIDIA/apex &&\
+  cd apex &&\
+  /opt/conda/bin/conda run -n 6pack pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
