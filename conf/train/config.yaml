@@ -2,7 +2,13 @@ defaults:
   - hydra/launcher: slurm
   - dataset: hammers
 
+use_ddp: True
+world_size: 1
+rank: 0
+local_rank: 0
+
 n_epochs: 500
+batch_size: 1 # samples sent through 1-by-1, step optimizer every batch_size samples, per-gpu
 resume_ckpt: ''        # path to model checkpoint to resume
 resume_ckpt_opt_state: ''
 workers: 1
@@ -29,15 +35,17 @@ scale_loss_inputs_by: 0.01
 slurm_additional:
   wandb_dir: '/root/checkpoint'
   python_bin: '/opt/conda/envs/6pack/bin/python'
+  python_optstr: '-m torch.distributed.launch --nproc_per_node=${slurm_additional.gpus}'
+  gpus: 7
 
 slurm:
-  gres: gpu:1
+  gres: gpu:${slurm_additional.gpus}
   job_name:
-    - 6pack-${dataset.name}-num_kp-${num_kp}
+    - 6pack-${dataset.name}-num_kp-${num_kp}-batch_size-${batch_size}-lr-{$lr}
   partition: gpu
-  cpus_per_task: 4
+  cpus_per_task: eval:4*${slurm_additional.gpus}
   ntasks_per_node: 1
-  mem: 22G
+  mem: eval:str(22*${slurm_additional.gpus})+ 'G'
   nodes: 1
   qos: normal
 

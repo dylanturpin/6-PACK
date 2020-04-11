@@ -32,7 +32,7 @@ class ModifiedResnet(nn.Module):
         super(ModifiedResnet, self).__init__()
 
         self.model = psp_models['resnet18'.lower()]()
-        self.model = nn.DataParallel(self.model)
+        #self.model = nn.DataParallel(self.model)
 
     def forward(self, x):
         x = self.model(x)
@@ -81,7 +81,7 @@ class KeyNet(nn.Module):
         self.num_cates = num_cates
 
         self.sm = torch.nn.Softmax(dim=2)
-        
+
         self.kp_1 = torch.nn.Conv1d(160, 90, 1)
         self.kp_2 = torch.nn.Conv1d(90, 3*num_key, 1)
 
@@ -97,7 +97,7 @@ class KeyNet(nn.Module):
     def forward(self, img, choose, x, anchor, scale, cate, gt_t):
         num_anc = len(anchor[0])
         out_img = self.cnn(img)
-        
+
         bs, di, _, _ = out_img.size()
 
         emb = out_img.view(bs, di, -1)
@@ -151,7 +151,7 @@ class KeyNet(nn.Module):
     def eval_forward(self, img, choose, ori_x, anchor, scale, space, first):
         num_anc = len(anchor[0])
         out_img = self.cnn(img)
-        
+
         bs, di, _, _ = out_img.size()
 
         emb = out_img.view(bs, di, -1)
