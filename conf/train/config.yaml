@@ -13,8 +13,8 @@ num_cates: 1
 category: 1       # category to train
 num_points: 500   # number of point-cloud points in input
 
-log_every_n_samples: 9
-checkpoint_every_n_samples: 99
+log_every_n_samples: 99
+checkpoint_every_n_samples: 990
 
 loss_term_weights:
   loss_att_weight: 0.
@@ -24,7 +24,7 @@ loss_term_weights:
   loss_surf_weight: 3.0
   loss_sep_weight: 1.0
 
-scale_loss_inputs_by: 0.1
+scale_loss_inputs_by: 0.01
 
 slurm_additional:
   wandb_dir: '/root/checkpoint'
@@ -33,7 +33,7 @@ slurm_additional:
 slurm:
   gres: gpu:1
   job_name:
-    - 6pack
+    - 6pack-${dataset.name}-num_kp-${num_kp}
   partition: gpu
   cpus_per_task: 4
   ntasks_per_node: 1

@@ -3,6 +3,8 @@ From: dylanturpin/6-pack:CIRCLE_SHA1
 
 %post
   mkdir /h
+  mkdir /root/checkpoint
+  touch /root/script.sh
   chmod -R 777 /h
   chmod -R 777 /root
   chmod -R 777 /opt

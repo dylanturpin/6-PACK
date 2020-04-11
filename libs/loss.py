@@ -1,3 +1,4 @@
+import pdb
 from torch.nn.modules.loss import _Loss
 from torch.autograd import Variable
 import math
@@ -8,9 +9,10 @@ import torch.nn as nn
 import random
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
-from libs.knn.__init__ import KNearestNeighbor
 import torch.distributions as tdist
 import copy
+import pymesh
+from gesvd import GESVD
 
 class Loss(_Loss):
     def __init__(self, num_key, num_cate, loss_weights):
@@ -33,8 +35,6 @@ class Loss(_Loss):
         self.select1 = torch.tensor([i for j in range(num_key-1) for i in range(num_key)]).cuda()
         self.select2 = torch.tensor([(i%num_key) for j in range(1, num_key) for i in range(j, j+num_key)]).cuda()
 
-        self.knn = KNearestNeighbor(1)
-
         self.loss_att_weight = loss_weights['loss_att_weight']
         self.Kp_dis_weight = loss_weights['Kp_dis_weight']
         self.Kp_cent_dis_weight = loss_weights['Kp_cent_dis_weight']
@@ -56,7 +56,12 @@ class Loss(_Loss):
 
         cov = torch.bmm(torch.bmm(x, diag_mat), y).contiguous().squeeze(0)
 
-        u, _, v = torch.svd(cov)
+        #u, _, v = torch.svd(cov)
+        svd = GESVD()
+        dev = cov.device
+        u, _, v = svd(cov.cpu())
+        u = u.to(dev)
+        v = v.to(dev)
 
         u = u.transpose(1, 0).contiguous()
         d = torch.det(torch.mm(v, u)).contiguous().view(1, 1, 1).contiguous()
@@ -124,11 +129,8 @@ class Loss(_Loss):
 
         return ver_Kp, cent0
 
-    def forward(self, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate):
-        if cate.view(-1).item() in [2, 4, 5]:
-            sym_or_not = False
-        else:
-            sym_or_not = True
+    def forward(self, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate):
+        sym_or_not = False
 
         num_kp = self.num_key
         num_anc = len(anc_fr[0])
@@ -184,23 +186,14 @@ class Loss(_Loss):
         num_p = 1
         num_point_mesh = self.num_key
 
-        target_fr = mesh[0].transpose(1, 0).contiguous().view(3, -1)
-        pred_fr = gt_Kp_fr.permute(2, 0, 1).contiguous().view(3, -1)
-        inds = self.knn(target_fr.unsqueeze(0), pred_fr.unsqueeze(0))
-        target_fr = torch.index_select(target_fr, 1, inds.view(-1) - 1)
-        target_fr = target_fr.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
-        pred_fr = pred_fr.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
-
-        loss_surf_fr = torch.mean(torch.norm((pred_fr - target_fr), dim=2), dim=1)
-
-        target_to = mesh[0].transpose(1, 0).contiguous().view(3, -1)
-        pred_to = gt_Kp_to.permute(2, 0, 1).contiguous().view(3, -1)
-        inds = self.knn(target_to.unsqueeze(0), pred_to.unsqueeze(0))
-        target_to = torch.index_select(target_to, 1, inds.view(-1) - 1)
-        target_to = target_to.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
-        pred_to = pred_to.view(3, bs * num_p, num_point_mesh).permute(1, 2, 0).contiguous()
-
-        loss_surf_to = torch.mean(torch.norm((pred_to - target_to), dim=2), dim=1)
+        full_mesh = pymesh.form_mesh(mesh.squeeze().cpu().numpy(), faces.squeeze().cpu().numpy())
+        sq_dist, face_indices, closest_points = pymesh.distance_to_mesh(full_mesh, gt_Kp_fr.squeeze().detach().cpu().numpy())
+        closest_points = torch.Tensor(closest_points).to(gt_Kp_fr.device)
+        loss_surf_fr = torch.mean(torch.norm(closest_points - gt_Kp_fr.squeeze(), dim=1))
+#
+        sq_dist, face_indices, closest_points = pymesh.distance_to_mesh(full_mesh, gt_Kp_to.squeeze().detach().cpu().numpy())
+        closest_points = torch.Tensor(closest_points).to(gt_Kp_to.device)
+        loss_surf_to = torch.mean(torch.norm(closest_points - gt_Kp_to.squeeze(), dim=1))
 
         loss_surf = (loss_surf_fr + loss_surf_to).contiguous() / 2.0
 

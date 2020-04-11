@@ -25,7 +25,7 @@ cate_list = ['bottle', 'bowl', 'camera', 'can', 'laptop', 'mug']
 
 @hydra.main(config_path='../conf/train/config.yaml')
 def main(config):
-    wandb.init(project="6pack", config=config, resume=True)
+    wandb.init(project="6pack", config=config, resume=True, name=config.slurm.job_name[0])
 
     if wandb.run.resumed:
         print(f'resuming! at step: {wandb.run.step}')
@@ -68,10 +68,10 @@ def main(config):
         optimizer.zero_grad()
 
         for i, data in enumerate(dataloader, 0):
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = data
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = data
             anchor = torch.Tensor([[[0.,0.,0.]]]).to(img_fr.device)
             #print(f'img_fr.shape: {img_fr.shape}, choose_fr.shape: {choose_fr.shape}, cloud_fr.shape: {cloud_fr.shape}, r_fr.shape: {r_fr.shape}, t_fr.shape: {t_fr.shape}, mesh.shape: {mesh.shape}, anchor.shape: {anchor.shape}, scale.shape: {scale.shape}')
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = Variable(img_fr).cuda(), \
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = Variable(img_fr).cuda(), \
                                                                                                                          Variable(choose_fr).cuda(), \
                                                                                                                          Variable(cloud_fr).cuda(), \
                                                                                                                          Variable(r_fr).cuda(), \
@@ -82,6 +82,7 @@ def main(config):
                                                                                                                          Variable(r_to).cuda(), \
                                                                                                                          Variable(t_to).cuda(), \
                                                                                                                          Variable(mesh).cuda(), \
+                                                                                                                         Variable(faces).cuda(), \
                                                                                                                          Variable(anchor).cuda(), \
                                                                                                                          Variable(scale).cuda(), \
                                                                                                                          Variable(cate).cuda()
@@ -98,7 +99,7 @@ def main(config):
             mesh *= config.scale_loss_inputs_by
             scale *= config.scale_loss_inputs_by
 
-            loss, _, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+            loss, _, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate)
             for k, v in losses_dict.items():
                 if k not in train_losses_dict_avg:
                     train_losses_dict_avg[k] = 0.0
@@ -133,8 +134,9 @@ def main(config):
         score = []
         val_losses_dict_avg = {}
         for j, data in enumerate(testdataloader, 0):
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = data
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate = Variable(img_fr).cuda(), \
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = data
+            anchor = torch.Tensor([[[0.,0.,0.]]]).to(img_fr.device)
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = Variable(img_fr).cuda(), \
                                                                                                                          Variable(choose_fr).cuda(), \
                                                                                                                          Variable(cloud_fr).cuda(), \
                                                                                                                          Variable(r_fr).cuda(), \
@@ -145,6 +147,7 @@ def main(config):
                                                                                                                          Variable(r_to).cuda(), \
                                                                                                                          Variable(t_to).cuda(), \
                                                                                                                          Variable(mesh).cuda(), \
+                                                                                                                         Variable(faces).cuda(), \
                                                                                                                          Variable(anchor).cuda(), \
                                                                                                                          Variable(scale).cuda(), \
                                                                                                                          Variable(cate).cuda()
@@ -160,7 +163,7 @@ def main(config):
             mesh *= config.scale_loss_inputs_by
             scale *= config.scale_loss_inputs_by
 
-            _, item_score, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, scale, cate)
+            _, item_score, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate)
             for k, v in losses_dict.items():
                 if k not in val_losses_dict_avg:
                     val_losses_dict_avg[k] = 0.0

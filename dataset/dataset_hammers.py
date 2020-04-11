@@ -199,4 +199,4 @@ class Dataset(Dataset):
         # state
         state_fr = torch.Tensor(self.state[vid_idx,frame_idx,:])
 
-        return img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, anchor, scale, cate
+        return img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate

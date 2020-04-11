@@ -2,21 +2,29 @@ FROM nvidia/cudagl:10.0-devel-ubuntu16.04
 # apt installable dependencies
 RUN DEBIAN_FRONTEND=noninteractive apt-get update -y &&\
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  gfortran \
   git \
+  libblas-dev \
   libboost-dev \
   libboost-thread-dev \
   libeigen3-dev \
   libgmp-dev \
   libgmpxx4ldbl \
+  liblapack3 \
+  liblapack-dev \
+  liblapacke \
+  liblapacke-dev \
   libmpfr-dev \
+  libopenblas-base \
+  libopenblas-dev \
   libsm6 \
   libstdc++6 \
   libtbb-dev \
   libxext6 \
   libxrender-dev \
   software-properties-common \
-  libblas-dev liblapack-dev gfortran \
   wget
+  
 # update libstdc++6
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test &&\
   DEBIAN_FRONTEND=noninteractive apt-get update -y &&\
