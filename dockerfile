@@ -15,6 +15,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update -y &&\
   libxext6 \
   libxrender-dev \
   software-properties-common \
+  libblas-dev liblapack-dev gfortran \
   wget
 # update libstdc++6
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test &&\
@@ -45,7 +46,10 @@ RUN mkdir /pkgs &&\
 RUN cd /pkgs &&\
   git clone https://github.com/chrischoy/gesvd.git &&\
   cd /pkgs/gesvd &&\
-  /opt/conda/bin/conda run -n 6pack python setup.py install
+  /opt/conda/bin/conda run -n 6pack pip install -e . &&\
+  x86_64-linux-gnu-g++ -pthread -shared -Wl,-O1 -Wl,-Bsymbolic-functions -Wl,-Bsymbolic-functions -Wl,-z,relro -Wl,-Bsymbolic-functions -Wl,-z,relro -g -fstack-protector-strong -Wformat -Werror=format-security -Wdate-time -D_FORTIFY_SOURCE=2 build/temp.linux-x86_64-3.7/gesvd.o -o build/lib.linux-x86_64-3.7/gesvd_cpp.cpython-37m-x86_64-linux-gnu.so -lopenblas &&\
+  mv build/lib.linux-x86_64-3.7/gesvd_cpp.cpython-37m-x86_64-linux-gnu.so . &&\
+  /opt/conda/bin/conda run -n 6pack python test.py
 
 # pymesh requires cmake 3.11.0 or higher
 RUN DEBIAN_FRONTEND=noninteractive apt-get remove -y cmake
