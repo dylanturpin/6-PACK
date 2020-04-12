@@ -2,7 +2,7 @@ dataset:
   name: 'hammers1'
   class: dataset.dataset_hammers.Dataset
   params:
-    dataset_root: '/h/dturpin/datasets/pretrain_6pack/'
+    dataset_root: '/h/dturpin/datasets/pretrain_6pack_scale1/'
     train_task_ids:
       - 39
     val_task_ids:

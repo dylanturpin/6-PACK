@@ -2,6 +2,17 @@ import torch
 import torch.distributed
 import os
 
+# from astooke/rlpyt
+def strip_ddp_state_dict(state_dict):
+    """ Workaround the fact that DistributedDataParallel prepends 'module.' to
+    every key, but the sampler models will not be wrapped in
+    DistributedDataParallel. (Solution from PyTorch forums.)"""
+    clean_state_dict = type(state_dict)()
+    for k, v in state_dict.items():
+        key = k[7:] if k[:7] == "module." else k
+        clean_state_dict[key] = v
+    return clean_state_dict
+
 # from NVIDIA/UnsupervisedLandmarkLearning
 def initialize_distributed(config):
     """

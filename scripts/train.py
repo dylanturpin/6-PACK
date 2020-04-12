@@ -26,7 +26,7 @@ import hydra
 from dataset.dataset_nocs import Dataset
 from libs.network import KeyNet
 from libs.loss import Loss
-from utils.utils import initialize_distributed
+from utils.utils import initialize_distributed, strip_ddp_state_dict
 
 cate_list = ['bottle', 'bowl', 'camera', 'can', 'laptop', 'mug']
 
@@ -43,9 +43,11 @@ def main(config):
     if config.rank == 0:
         wandb.init(project="6pack", config=config, resume=True, name=config.slurm.job_name[0])
 
-    if config.rank == 0 and wandb.run.resumed:
-        print(f'resuming! at step: {wandb.run.step}')
-        config.resume_ckpt = os.path.join(config.outf, 'model_latest.pth')
+    #if config.rank == 0 and wandb.run.resumed:
+    #if wandb.run.resumed:
+    chkpt_path = os.path.join(config.outf, 'model_latest.pth')
+    if os.path.exists(chkpt_path):
+        config.resume_ckpt = chkpt_path
         config.resume_ckpt_opt_state = os.path.join(config.outf, 'optim_state_latest.pth')
 
 
@@ -92,12 +94,13 @@ def main(config):
     if config.rank == 0 and wandb.run.resumed:
         start_count = wandb.run.step // config.world_size
         start_epoch = wandb.run.step // len(dataloader)
+        print(f'resuming! at step: {wandb.run.step}')
 
     train_count = start_count
+    train_dis_avg = 0.0
+    train_losses_dict_avg = {}
     for epoch in range(start_epoch, config.n_epochs):
         model.train()
-        train_dis_avg = 0.0
-        train_losses_dict_avg = {}
 
         optimizer.zero_grad()
 
@@ -168,10 +171,13 @@ def main(config):
 
             if config.local_rank == 0 and  train_count != 0 and train_count % config.checkpoint_every_n_samples == 0:
                 fname = os.path.join(config.outf, 'model_at_step_{0}.pth'.format(train_count * config.world_size))
-                torch.save(model.state_dict(), fname)
+                state_dict = model.state_dict()
+                if config.use_ddp:
+                    state_dict = strip_ddp_state_dict(state_dict)
+                torch.save(state_dict, fname)
                 wandb.save(fname)
                 fname = os.path.join(config.outf, 'model_latest.pth')
-                torch.save(model.state_dict(), fname)
+                torch.save(state_dict, fname)
                 fname = os.path.join(config.outf, 'optim_state_latest.pth')
                 torch.save(optimizer.state_dict(), fname)
 
