@@ -16,6 +16,11 @@ dataset:
       - 39
     val_task_ids:
       - 39
+    # anchors and scale are calculated from a bbox.
+    # when get_bbox_from_mesh is True, the bbox is calculated from
+    # the vertices of meshes of adjacent frames.
+    # when False, the bbox is calculated from hand-tuned values.
+    set_scale_from_mesh: True
     # following are set by script based on main config
     set_name: None
     num_points: None

@@ -52,7 +52,7 @@ def get_anchor_box(ori_bbox):
 
 
 class Dataset(Dataset):
-    def __init__(self, dataset_root=None, set_name='train', train_task_ids=[0], val_task_ids=[0], num_points=500):
+    def __init__(self, dataset_root=None, set_name='train', train_task_ids=[0], val_task_ids=[0], num_points=500, set_scale_from_mesh=True):
         self.x = 0
         self.dataset_root = dataset_root
         data_path = os.path.join(dataset_root, 'data.npy')
@@ -65,6 +65,7 @@ class Dataset(Dataset):
         self.faces = data['faces']
         self.xmap = None
         self.ymap = None
+        self.set_scale_from_mesh = set_scale_from_mesh
 
         if set_name == 'train':
             self.task_ids = train_task_ids
@@ -177,10 +178,17 @@ class Dataset(Dataset):
         t_to = torch.Tensor(self.pos[vid_idx,frame_idx+1,:])
 
         # joint anchor and scale
-        joint_mesh = np.concatenate((self.vert[vid_idx][frame_idx,:,:], self.vert[vid_idx][frame_idx+1,:,:]),axis=0)
-        anchor = torch.zeros(125,3, dtype=torch.float)
-        scale = torch.zeros(3, dtype=torch.float)
-        a,s = get_anchor_box(joint_mesh)
+        if self.set_scale_from_mesh:
+            joint_mesh = np.concatenate((self.vert[vid_idx][frame_idx,:,:], self.vert[vid_idx][frame_idx+1,:,:]),axis=0)
+            anchor = torch.zeros(125,3, dtype=torch.float)
+            scale = torch.zeros(3, dtype=torch.float)
+            a,s = get_anchor_box(joint_mesh)
+        else:
+            hand_selected = np.array([[0.28,0.,0.],[-0.28,0.0,0.1],[0.,0.28,0.],[0.,-0.28,0.],[0.0,0.0,0.],[0.0,0.0,0.04]])
+            anchor = torch.zeros(125,3, dtype=torch.float)
+            scale = torch.zeros(3, dtype=torch.float)
+            a,s = get_anchor_box(hand_selected)
+
         anchor[:,:] = a
         scale[:] = s
         # get cloud to match anchor scale

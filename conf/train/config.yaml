@@ -41,7 +41,7 @@ slurm_additional:
 slurm:
   gres: gpu:${slurm_additional.gpus}
   job_name:
-    - 6pack-${dataset.name}-num_kp-${num_kp}-batch_size-${batch_size}-lr-${lr}-gpus-${slurm_additional.gpus}
+    - 6pack-${dataset.name}-num_kp-${num_kp}-batch_size-${batch_size}-lr-${lr}-gpus-${slurm_additional.gpus}-set_scale_from_mesh-${dataset.params.set_scale_from_mesh}
   partition: gpu
   cpus_per_task: eval:4*${slurm_additional.gpus}
   ntasks_per_node: 1
