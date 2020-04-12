@@ -55,4 +55,4 @@ singularity:
   binds:
     - '/checkpoint/dturpin/$SLURM_JOB_ID:/root/checkpoint'
 
-exec_path: '/h/dturpin/repos/6-PACK/scripts/train.py'
+exec_path: '/h/dturpin/repos/6-PACK-latest/scripts/train.py'

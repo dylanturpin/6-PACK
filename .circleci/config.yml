@@ -31,7 +31,7 @@ jobs:
           name: Build application Docker image
           no_output_timeout: 30m
           command: |
-            docker build -t dylanturpin/6-pack:${CIRCLE_SHA1} .
+            docker build -t dylanturpin/6-pack:${CIRCLE_SHA1} ./docker
       - deploy:
           name: Push application Docker image
           command: |
@@ -96,11 +96,11 @@ jobs:
           name: build container
           command: |
             cd ~/repo
-            sed 's/CIRCLE_SHA1/'${CIRCLE_SHA1}'/g' ~/repo/Singularity > ~/repo/Singularity.tmp
-            mv ~/repo/Singularity.tmp ~/repo/Singularity
-            cat ~/repo/Singularity
+            sed 's/CIRCLE_SHA1/'${CIRCLE_SHA1}'/g' ~/repo/docker/Singularity > ~/repo/docker/Singularity.tmp
+            mv ~/repo/docker/Singularity.tmp ~/repo/docker/Singularity
+            cat ~/repo/docker/Singularity
             export PATH=$PATH:/opt/circleci/.pyenv/shims
-            /bin/bash ~/repo/.circleci/build.sh Singularity
+            /bin/bash ~/repo/.circleci/build.sh docker/Singularity
             mkdir -p build && cp *.tar build
           no_output_timeout: 30m
       - add_ssh_keys:
