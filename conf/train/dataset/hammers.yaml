@@ -1,6 +1,6 @@
 dataset:
   name: 'hammers1'
-  class: dataset.dataset_hammers.Dataset
+  cls: dataset.dataset_hammers.Dataset
   params:
     dataset_root: '/h/dturpin/datasets/pretrain_6pack_scale1/'
     train_task_ids:
