@@ -20,7 +20,7 @@ category: 1       # category to train
 num_points: 500   # number of point-cloud points in input
 
 log_every_n_samples: 99
-checkpoint_every_n_samples: 990
+checkpoint_every_n_samples: 3960
 
 loss_term_weights:
   loss_att_weight: 0.
@@ -37,6 +37,7 @@ slurm_additional:
   python_bin: '/opt/conda/envs/6pack/bin/python'
   python_optstr: '-m torch.distributed.launch --nproc_per_node=${slurm_additional.gpus}'
   gpus: 4
+  checkpoint_dir: /scratch/hdd001/home/dturpin/checkpoint/$SLURM_JOB_ID
 
 slurm:
   gres: gpu:${slurm_additional.gpus}
@@ -53,6 +54,6 @@ singularity:
   bin_path: '/h/dturpin/pkgs/bin/singularity'
   sbox_path: '/h/dturpin/img/6pack_sbox'
   binds:
-    - '/checkpoint/dturpin/$SLURM_JOB_ID:/root/checkpoint'
+    - /scratch/hdd001/home/dturpin/checkpoint/$SLURM_JOB_ID:/root/checkpoint
 
 exec_path: '/h/dturpin/repos/6-PACK-latest/scripts/train.py'
