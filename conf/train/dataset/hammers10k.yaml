@@ -1,0 +1,19 @@
+dataset:
+  cls: dataset.dataset_hammers.Dataset
+  name: 'hammers10k'
+  params:
+    dataset_root: '/h/dturpin/datasets/pretrain_6pack_10k/'
+    train_task_ids: null
+    val_task_ids: null
+    train_task_ids_start: 0
+    train_task_ids_end: 10000
+    val_task_ids_start: 39
+    val_task_ids_end: 40
+    # anchors and scale are calculated from a bbox.
+    # when get_bbox_from_mesh is True, the bbox is calculated from
+    # the vertices of meshes of adjacent frames.
+    # when False, the bbox is calculated from hand-tuned values.
+    set_scale_from_mesh: True
+    # following are set by script based on main config
+    set_name: null
+    num_points: null

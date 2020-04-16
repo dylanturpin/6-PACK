@@ -6,6 +6,7 @@ for i, arg in enumerate(sys.argv):
     if arg[0:2] == '--':
         sys.argv[i] = arg[2:]
 
+import pdb
 import wandb
 import argparse
 import random
@@ -39,9 +40,17 @@ def main(config):
         config.world_size = int(os.environ['WORLD_SIZE'])
         config.rank = int(os.environ['RANK'])
         config.local_rank = int(os.environ['LOCAL_RANK'])
+    print(f'world_size: {config.world_size}, rank: {config.rank}, local_rank: {config.local_rank}')
+
+    if config.world_size > 1:
+        initialize_distributed(config)
+        print(f'initialized distributed rank: {config.rank}')
+
 
     if config.rank == 0:
-        wandb.init(project="6pack", config=config, resume=True, name=config.slurm.job_name[0])
+        print('initializing wandb...')
+        wandb.init(project="6pack", resume=True, name=config.slurm.job_name[0])
+        print(f'initialized wandb, resume={wandb.run.resumed}')
 
     #if config.rank == 0 and wandb.run.resumed:
     #if wandb.run.resumed:
@@ -51,28 +60,29 @@ def main(config):
         config.resume_ckpt_opt_state = os.path.join(config.outf, 'optim_state_latest.pth')
 
 
-    if config.world_size > 1:
-        initialize_distributed(config)
-
     model = KeyNet(num_points = config.num_points, num_key = config.num_kp, num_cates = config.num_cates)
-    model.cuda(torch.cuda.current_device())
     criterion = Loss(config.num_kp, config.num_cates, config.loss_term_weights)
-    #criterion.cuda(torch.cuda.current_device())
 
     if config.resume_ckpt != '':
-        model.load_state_dict(torch.load(config.resume_ckpt))
+        print(f'rank: {config.rank}, resuming model from {config.resume_ckpt}')
+        model.load_state_dict(torch.load(config.resume_ckpt, map_location=lambda storage, loc: storage))
+
+    model.cuda(torch.cuda.current_device())
+
+    optimizer = optim.Adam(model.parameters(), lr=config.lr)
+    if config.resume_ckpt_opt_state != '':
+        print(f'rank: {config.rank}, resuming optim state from {config.resume_ckpt_opt_state}')
+        optimizer_state_dict = torch.load(config.resume_ckpt_opt_state, map_location=lambda storage, loc: storage)
+        loaded_groups = set(optimizer_state_dict['param_groups'][0]['params'])
+        groups = set(optimizer.state_dict()['param_groups'][0]['params'])
+        optimizer.load_state_dict(optimizer_state_dict)
 
     if config.use_ddp:
         model = DDP(model, find_unused_parameters=True, device_ids=[config.rank])
         #criterion = DDP(criterion, device_ids=[config.local_rank], output_device=[config.local_rank])
 
-    optimizer = optim.Adam(model.parameters(), lr=config.lr)
-    if config.resume_ckpt_opt_state != '':
-        optimizer_state_dict = torch.load(config.resume_ckpt_opt_state)
-        optimizer.load_state_dict(optimizer_state_dict)
 
     # dataset init
-
     #dataset = Dataset('train', config.dataset_root, True, config.num_points, opt.num_cates, 5000, opt.category)
     dataset = hydra.utils.instantiate(config.dataset, set_name='train', num_points=config.num_points)
     #test_dataset = Dataset('val', opt.dataset_root, False, opt.num_points, opt.num_cates, 1000, opt.category)
@@ -82,24 +92,28 @@ def main(config):
     train_sampler = None
     test_sampler = None
     if config.use_ddp:
-        train_sampler = torch.utils.data.DistributedSampler(dataset)
+        train_sampler = torch.utils.data.DistributedSampler(dataset, shuffle=True)
         test_sampler = torch.utils.data.DistributedSampler(test_dataset)
 
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=(train_sampler is None), num_workers=config.workers, sampler=train_sampler)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=config.workers, sampler=train_sampler)
     testdataloader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=config.workers, sampler=test_sampler)
-
 
     start_count = 0
     start_epoch = 0
-    if config.rank == 0 and wandb.run.resumed:
-        start_count = wandb.run.step // config.world_size
-        start_epoch = wandb.run.step // len(dataloader)
-        print(f'resuming! at step: {wandb.run.step}')
+    if config.resume_ckpt_opt_state != '':
+        optimizer_state_dict = torch.load(config.resume_ckpt_opt_state, map_location=lambda storage, loc: storage)
+        optim_state_step = optimizer_state_dict['state'][list(optimizer_state_dict['state'].keys())[0]]['step']
+        start_count = optim_state_step * config.batch_size
+        start_epoch = optim_state_step * config.batch_size // len(dataloader)
+        print(f'rank: {config.rank}, resuming from step {start_count} and epoch {start_epoch}')
+
 
     train_count = start_count
     train_dis_avg = 0.0
     train_losses_dict_avg = {}
     for epoch in range(start_epoch, config.n_epochs):
+        if config.use_ddp:
+            train_sampler.set_epoch(epoch)
         model.train()
 
         optimizer.zero_grad()
@@ -170,16 +184,23 @@ def main(config):
                 train_losses_dict_avg = {}
 
             if config.local_rank == 0 and  train_count != 0 and train_count % config.checkpoint_every_n_samples == 0:
-                fname = os.path.join(config.outf, 'model_at_step_{0}.pth'.format(train_count * config.world_size))
+                #fname = os.path.join(config.outf, 'model_at_step_{0}.pth'.format(train_count * config.world_size))
                 state_dict = model.state_dict()
                 if config.use_ddp:
                     state_dict = strip_ddp_state_dict(state_dict)
-                torch.save(state_dict, fname)
-                wandb.save(fname)
+                #torch.save(state_dict, fname)
+                # save to tmp location then mv, incase we are pre-empted while writing
+                fname_tmp = os.path.join(config.outf, 'model_latest.pth.tmp')
                 fname = os.path.join(config.outf, 'model_latest.pth')
-                torch.save(state_dict, fname)
+                torch.save(state_dict, fname_tmp)
+                os.system(f'mv {fname_tmp} {fname}')
+                fname_wandb = os.path.join(config.outf, 'model_latest_wandb.pth')
+                torch.save(state_dict, fname_wandb)
+                wandb.save(fname_wandb)
+                fname_tmp = os.path.join(config.outf, 'optim_state_latest.pth.tmp')
                 fname = os.path.join(config.outf, 'optim_state_latest.pth')
-                torch.save(optimizer.state_dict(), fname)
+                torch.save(optimizer.state_dict(), fname_tmp)
+                os.system(f'mv {fname_tmp} {fname}')
 
         optimizer.zero_grad()
         model.eval()

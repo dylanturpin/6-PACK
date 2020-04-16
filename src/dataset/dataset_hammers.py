@@ -52,7 +52,19 @@ def get_anchor_box(ori_bbox):
 
 
 class Dataset(Dataset):
-    def __init__(self, dataset_root=None, set_name='train', train_task_ids=[0], val_task_ids=[0], num_points=500, set_scale_from_mesh=True):
+    def __init__(
+      self,
+      dataset_root=None,
+      set_name='train',
+      train_task_ids=None,
+      val_task_ids=None,
+      train_task_ids_start=0,
+      train_task_ids_end=1,
+      val_task_ids_start=0,
+      val_task_ids_end=1,
+      num_points=500,
+      set_scale_from_mesh=True):
+
         self.x = 0
         self.dataset_root = dataset_root
         data_path = os.path.join(dataset_root, 'data.npy')
@@ -68,9 +80,15 @@ class Dataset(Dataset):
         self.set_scale_from_mesh = set_scale_from_mesh
 
         if set_name == 'train':
-            self.task_ids = train_task_ids
+            if train_task_ids is not None:
+                self.task_ids = train_task_ids
+            else:
+                self.task_ids = list(range(train_task_ids_start, train_task_ids_end))
         elif set_name == 'val':
-            self.task_ids = val_task_ids
+            if val_task_ids is not None:
+                self.task_ids = val_task_ids
+            else:
+                self.task_ids = list(range(val_task_ids_start, val_task_ids_end))
 
         # num_frames_array snippet from Nvidia UnsupervisedLandmarkLearning
         self.num_frames_array = [0]
