@@ -33,6 +33,7 @@ cate_list = ['bottle', 'bowl', 'camera', 'can', 'laptop', 'mug']
 
 @hydra.main(config_path='../conf/train/config.yaml')
 def main(config):
+    #torch.autograd.set_detect_anomaly(True)
 
     # parse ddp related args
     config.rank = 0
@@ -59,9 +60,8 @@ def main(config):
         config.resume_ckpt = chkpt_path
         config.resume_ckpt_opt_state = os.path.join(config.outf, 'optim_state_latest.pth')
 
-
     model = KeyNet(num_points = config.num_points, num_key = config.num_kp, num_cates = config.num_cates)
-    criterion = Loss(config.num_kp, config.num_cates, config.loss_term_weights)
+    criterion = Loss(config.num_kp, config.num_cates, config.loss_term_weights, loss_sep_type=config.loss_sep_type, loss_surf_type=config.loss_surf_type)
 
     if config.resume_ckpt != '':
         print(f'rank: {config.rank}, resuming model from {config.resume_ckpt}')
@@ -112,6 +112,7 @@ def main(config):
     train_dis_avg = 0.0
     train_losses_dict_avg = {}
     for epoch in range(start_epoch, config.n_epochs):
+        print(epoch)
         if config.use_ddp:
             train_sampler.set_epoch(epoch)
         model.train()
@@ -127,10 +128,10 @@ def main(config):
             #s += f' {p.device}'
             #print(s)
 
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = data
-            anchor = torch.Tensor([[[0.,0.,0.]]]).to(img_fr.device)
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate, geodesic, curvature = data
+            anchor = torch.Tensor([[[0.,0.6,0.02]]]).to(img_fr.device) / scale
             #print(f'img_fr.shape: {img_fr.shape}, choose_fr.shape: {choose_fr.shape}, cloud_fr.shape: {cloud_fr.shape}, r_fr.shape: {r_fr.shape}, t_fr.shape: {t_fr.shape}, mesh.shape: {mesh.shape}, anchor.shape: {anchor.shape}, scale.shape: {scale.shape}')
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = Variable(img_fr).cuda(torch.cuda.current_device()), \
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate, geodesic, curvature = Variable(img_fr).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(choose_fr).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(cloud_fr).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(r_fr).cuda(torch.cuda.current_device()), \
@@ -144,21 +145,14 @@ def main(config):
                                                                                                                          Variable(faces).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(anchor).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(scale).cuda(torch.cuda.current_device()), \
-                                                                                                                         Variable(cate).cuda(torch.cuda.current_device())
+                                                                                                                         Variable(cate).cuda(torch.cuda.current_device()), \
+                                                                                                                         Variable(geodesic).cuda(torch.cuda.current_device()), \
+                                                                                                                         Variable(curvature).cuda(torch.cuda.current_device())
 
             Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
             Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
 
-            Kp_fr *= config.scale_loss_inputs_by
-            Kp_to *= config.scale_loss_inputs_by
-            anc_fr *= config.scale_loss_inputs_by
-            anc_to *= config.scale_loss_inputs_by
-            t_fr *= config.scale_loss_inputs_by
-            t_to *= config.scale_loss_inputs_by
-            mesh *= config.scale_loss_inputs_by
-            scale *= config.scale_loss_inputs_by
-
-            loss, _, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate)
+            loss, _, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate, geodesic, curvature)
             for k, v in losses_dict.items():
                 if k not in train_losses_dict_avg:
                     train_losses_dict_avg[k] = 0.0
@@ -207,9 +201,9 @@ def main(config):
         score = []
         val_losses_dict_avg = {}
         for j, data in enumerate(testdataloader, 0):
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = data
-            anchor = torch.Tensor([[[0.,0.,0.]]]).to(img_fr.device)
-            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate = Variable(img_fr).cuda(torch.cuda.current_device()), \
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate, geodesic, curvature = data
+            anchor = torch.Tensor([[[0.,0.6,0.02]]]).to(img_fr.device) / scale
+            img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate, geodesic, curvature = Variable(img_fr).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(choose_fr).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(cloud_fr).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(r_fr).cuda(torch.cuda.current_device()), \
@@ -223,20 +217,14 @@ def main(config):
                                                                                                                          Variable(faces).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(anchor).cuda(torch.cuda.current_device()), \
                                                                                                                          Variable(scale).cuda(torch.cuda.current_device()), \
-                                                                                                                         Variable(cate).cuda(torch.cuda.current_device())
+                                                                                                                         Variable(cate).cuda(torch.cuda.current_device()), \
+                                                                                                                         Variable(geodesic).cuda(torch.cuda.current_device()), \
+                                                                                                                         Variable(curvature).cuda(torch.cuda.current_device())
 
             Kp_fr, anc_fr, att_fr = model(img_fr, choose_fr, cloud_fr, anchor, scale, cate, t_fr)
             Kp_to, anc_to, att_to = model(img_to, choose_to, cloud_to, anchor, scale, cate, t_to)
-            Kp_fr *= config.scale_loss_inputs_by
-            Kp_to *= config.scale_loss_inputs_by
-            anc_fr *= config.scale_loss_inputs_by
-            anc_to *= config.scale_loss_inputs_by
-            t_fr *= config.scale_loss_inputs_by
-            t_to *= config.scale_loss_inputs_by
-            mesh *= config.scale_loss_inputs_by
-            scale *= config.scale_loss_inputs_by
 
-            _, item_score, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate)
+            _, item_score, losses_dict = criterion(Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate, geodesic, curvature)
             for k, v in losses_dict.items():
                 if k not in val_losses_dict_avg:
                     val_losses_dict_avg[k] = 0.0

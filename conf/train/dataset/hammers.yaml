@@ -2,11 +2,111 @@ dataset:
   name: 'hammers1'
   cls: dataset.dataset_hammers.Dataset
   params:
-    dataset_root: '/h/dturpin/datasets/pretrain_6pack_scale1/'
+    dataset_root: '/h/dturpin/datasets/pretrain_6pack_10k_remesh/'
+    consecutive_frames_only: False
+    first_frame_only: True
     train_task_ids:
       - 39
-    val_task_ids:
       - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+      - 39
+    val_task_ids: []
     # anchors and scale are calculated from a bbox.
     # when get_bbox_from_mesh is True, the bbox is calculated from
     # the vertices of meshes of adjacent frames.

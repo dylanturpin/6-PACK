@@ -1,13 +1,14 @@
 defaults:
   - hydra/launcher: slurm
   - dataset: hammers
+  - slurm: v2
 
 use_ddp: True
 world_size: 1
 rank: 0
 local_rank: 0
 
-n_epochs: 3000
+n_epochs: 300000
 batch_size: 1 # samples sent through 1-by-1, step optimizer every batch_size samples, per-gpu
 resume_ckpt: ''        # path to model checkpoint to resume
 resume_ckpt_opt_state: ''
@@ -22,38 +23,31 @@ num_points: 500   # number of point-cloud points in input
 log_every_n_samples: 99
 checkpoint_every_n_samples: 3960
 
+loss_sep_type: coverage # euclidean, geodesic, coverage or curvature
+loss_surf_type: volume # surface or volume
 loss_term_weights:
   loss_att_weight: 0.
-  Kp_dis_weight: 3.0
+  Kp_dis_weight: 0.0001
   Kp_cent_dis_weight: 0.
-  loss_rot_weight: 0.2
-  loss_surf_weight: 3.0
-  loss_sep_weight: 1.0
+  loss_rot_weight: 0.0
+  loss_surf_weight: 60.0
+  loss_sep_weight: 3.0
+  kp_to_mesh_dist_scale: 10.0
 
 scale_loss_inputs_by: 0.1
 
 slurm_additional:
   wandb_dir: '/root/checkpoint'
-  python_bin: '/opt/conda/envs/6pack/bin/python'
+  python_bin: '/opt/conda/bin/conda run -n 6pack python'
   python_optstr: '-m torch.distributed.launch --master_port 99`expr $SLURM_JOB_ID % 20 + 20` --nproc_per_node=${slurm_additional.gpus}'
   gpus: 4
-  checkpoint_dir: /scratch/hdd001/home/dturpin/checkpoint/$SLURM_JOB_ID
-
-slurm:
-  gres: gpu:${slurm_additional.gpus}
-  job_name:
-    - 6pack-${dataset.name}-num_kp-${num_kp}-batch_size-${batch_size}-lr-${lr}-gpus-${slurm_additional.gpus}-set_scale_from_mesh-${dataset.params.set_scale_from_mesh}-loss_weights-${loss_term_weights.loss_att_weight}_${loss_term_weights.Kp_dis_weight}_${loss_term_weights.Kp_cent_dis_weight}_${loss_term_weights.loss_rot_weight}_${loss_term_weights.loss_surf_weight}_${loss_term_weights.loss_sep_weight}
-  partition: gpu
-  cpus_per_task: eval:4*${slurm_additional.gpus}
-  ntasks_per_node: 1
-  mem: eval:str(22*${slurm_additional.gpus})+ 'G'
-  nodes: 1
-  qos: normal
+  checkpoint_dir: /h/dturpin/checkpoint/$SLURM_JOB_ID
 
 singularity:
   bin_path: '/h/dturpin/pkgs/bin/singularity'
   sbox_path: '/h/dturpin/img/6pack_sbox'
   binds:
-    - /checkpoint/dturpin/$SLURM_JOB_ID:/root/checkpoint
+    - /h/dturpin/checkpoint/$SLURM_JOB_ID:/root/checkpoint
+    - /h/dturpin/tmp:/tmp
 
 exec_path: '/h/dturpin/repos/6-PACK-latest/scripts/train.py'

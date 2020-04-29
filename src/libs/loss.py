@@ -12,10 +12,11 @@ import torch.nn.functional as F
 import torch.distributions as tdist
 import copy
 import pymesh
-from gesvd import GESVD
+import pyvista
+from libs.sinkhorn import SinkhornOT
 
 class Loss(_Loss):
-    def __init__(self, num_key, num_cate, loss_weights):
+    def __init__(self, num_key, num_cate, loss_weights, loss_sep_type='euclidean', loss_surf_type='surface'):
         super(Loss, self).__init__(True)
         self.num_key = num_key
         self.num_cate = num_cate
@@ -41,6 +42,11 @@ class Loss(_Loss):
         self.loss_rot_weight = loss_weights['loss_rot_weight']
         self.loss_surf_weight = loss_weights['loss_surf_weight']
         self.loss_sep_weight = loss_weights['loss_sep_weight']
+        self.kp_to_mesh_dist_scale = loss_weights['kp_to_mesh_dist_scale']
+
+        self.loss_sep_type = loss_sep_type
+        self.loss_surf_type = loss_surf_type
+        self.sinkhorn_loss = SinkhornOT()
 
 
     def estimate_rotation(self, pt0, pt1, sym_or_not):
@@ -56,19 +62,19 @@ class Loss(_Loss):
 
         cov = torch.bmm(torch.bmm(x, diag_mat), y).contiguous().squeeze(0)
 
-        #u, _, v = torch.svd(cov)
-        dev = cov.device
-        trivial_solution = torch.tensor(0.)
-        try:
-            svd = GESVD()
-            u, _, v = svd(cov.cpu())
-            u = u.to(dev)
-            v = v.to(dev)
-        except:
-            print('---- svd ERROR, using trivial solution -----')
-            u = torch.eye(cov.shape[0]).to(dev)
-            v = torch.eye(cov.shape[0]).to(dev)
-            trivial_solution = torch.tensor(1.)
+        u, _, v = torch.svd(cov)
+        #dev = cov.device
+        #trivial_solution = torch.tensor(0.)
+        #try:
+            #svd = GESVD()
+            #u, _, v = svd(cov.cpu())
+            #u = u.to(dev)
+            #v = v.to(dev)
+        #except:
+            #print('---- svd ERROR, using trivial solution -----')
+            #u = torch.eye(cov.shape[0]).to(dev)
+            #v = torch.eye(cov.shape[0]).to(dev)
+            #trivial_solution = torch.tensor(1.)
 
 
         u = u.transpose(1, 0).contiguous()
@@ -137,7 +143,7 @@ class Loss(_Loss):
 
         return ver_Kp, cent0
 
-    def forward(self, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate):
+    def forward(self, Kp_fr, Kp_to, anc_fr, anc_to, att_fr, att_to, r_fr, t_fr, r_to, t_to, mesh, faces, scale, cate, geodesic, curvature):
         sym_or_not = False
 
         num_kp = self.num_key
@@ -172,57 +178,168 @@ class Loss(_Loss):
 
 
         ############# Pose Error Loss
-        rot_Kp_fr = (Kp_fr - t_fr).contiguous()
-        rot_Kp_to = (Kp_to - t_to).contiguous()
-        rot = torch.bmm(r_to, r_fr.transpose(2, 1))
+        if self.loss_rot_weight > 0.:
+            rot_Kp_fr = (Kp_fr - t_fr).contiguous()
+            rot_Kp_to = (Kp_to - t_to).contiguous()
+            rot = torch.bmm(r_to, r_fr.transpose(2, 1))
 
-        if sym_or_not:
-            rot = torch.bmm(rot, self.sym_axis).view(-1)
-            pred_r = self.estimate_rotation(rot_Kp_fr, rot_Kp_to, sym_or_not)
-            loss_rot = (torch.acos(torch.sum(pred_r * rot) / (torch.norm(pred_r) * torch.norm(rot)))).contiguous()
-            loss_rot = loss_rot
+            if sym_or_not:
+                rot = torch.bmm(rot, self.sym_axis).view(-1)
+                pred_r = self.estimate_rotation(rot_Kp_fr, rot_Kp_to, sym_or_not)
+                loss_rot = (torch.acos(torch.sum(pred_r * rot) / (torch.norm(pred_r) * torch.norm(rot)))).contiguous()
+                loss_rot = loss_rot
+            else:
+                pred_r, trivial_svd_solution = self.estimate_rotation(rot_Kp_fr, rot_Kp_to, sym_or_not)
+                frob_sqr = torch.sum(((pred_r - rot) * (pred_r - rot)).view(-1)).contiguous()
+                frob = torch.sqrt(frob_sqr).unsqueeze(0).contiguous()
+                cc = torch.cat([self.oneone, frob / (2 * math.sqrt(2))]).contiguous()
+                loss_rot = 2.0 * torch.mean(torch.asin(torch.min(cc))).contiguous()
         else:
-            pred_r, trivial_svd_solution = self.estimate_rotation(rot_Kp_fr, rot_Kp_to, sym_or_not)
-            frob_sqr = torch.sum(((pred_r - rot) * (pred_r - rot)).view(-1)).contiguous()
-            frob = torch.sqrt(frob_sqr).unsqueeze(0).contiguous()
-            cc = torch.cat([self.oneone, frob / (2 * math.sqrt(2))]).contiguous()
-            loss_rot = 2.0 * torch.mean(torch.asin(torch.min(cc))).contiguous()
+            loss_rot = torch.zeros(1).to(Kp_fr.device)
+            trivial_svd_solution = torch.zeros(1).to(Kp_fr.device)
 
 
         ############# Close To Surface Loss
-        bs = 1
-        num_p = 1
-        num_point_mesh = self.num_key
+        if self.loss_surf_type == 'surface':
+            bs = 1
+            num_p = 1
+            num_point_mesh = self.num_key
 
-        full_mesh = pymesh.form_mesh(mesh.squeeze().cpu().numpy(), faces.squeeze().cpu().numpy())
-        sq_dist, face_indices, closest_points = pymesh.distance_to_mesh(full_mesh, gt_Kp_fr.squeeze().detach().cpu().numpy())
-        closest_points = torch.Tensor(closest_points).to(gt_Kp_fr.device)
-        loss_surf_fr = torch.mean(torch.norm(closest_points - gt_Kp_fr.squeeze(), dim=1))
-#
-        sq_dist, face_indices, closest_points = pymesh.distance_to_mesh(full_mesh, gt_Kp_to.squeeze().detach().cpu().numpy())
-        closest_points = torch.Tensor(closest_points).to(gt_Kp_to.device)
-        loss_surf_to = torch.mean(torch.norm(closest_points - gt_Kp_to.squeeze(), dim=1))
+            full_mesh = pymesh.form_mesh(mesh.squeeze().cpu().numpy(), faces.squeeze().cpu().numpy())
+            sq_dist, face_indices, closest_points_fr = pymesh.distance_to_mesh(full_mesh, gt_Kp_fr.squeeze().detach().cpu().numpy())
+            closest_points_fr = torch.Tensor(closest_points_fr).to(gt_Kp_fr.device)
+            loss_surf_fr = torch.mean(torch.norm(closest_points_fr - gt_Kp_fr.squeeze(), dim=1))
+            #loss_surf_fr = torch.mean(torch.abs(closest_points_fr - gt_Kp_fr.squeeze())**2)
+    #
+            sq_dist, face_indices, closest_points_to = pymesh.distance_to_mesh(full_mesh, gt_Kp_to.squeeze().detach().cpu().numpy())
+            closest_points_to = torch.Tensor(closest_points_to).to(gt_Kp_to.device)
+            #loss_surf_to = torch.mean(torch.abs(closest_points_to - gt_Kp_to.squeeze())**2)
+            loss_surf_to = torch.mean(torch.norm(closest_points_fr - gt_Kp_fr.squeeze(), dim=1))
 
-        loss_surf = (loss_surf_fr + loss_surf_to).contiguous() / 2.0
+            loss_surf = (loss_surf_fr + loss_surf_to).contiguous() / 2.0
+        elif self.loss_surf_type == 'volume':
+            pymesh_mesh = pymesh.form_mesh(mesh.squeeze().cpu().numpy(), faces.squeeze().cpu().numpy())
+
+            pd_faces = pymesh_mesh.faces
+            threes = np.array([3]*pd_faces.shape[0])[:, None]
+            pd_faces = np.concatenate((threes, pd_faces), axis=1)
+            pd_points = pymesh_mesh.vertices
+            pyvista_mesh = pyvista.PolyData(pd_points, pd_faces)
+
+            # from
+            kp_grid = pyvista.PolyData(gt_Kp_fr.squeeze().cpu().detach().numpy())
+            kp_grid.compute_implicit_distance(pyvista_mesh,inplace=True)
+            implicit_distances_fr = kp_grid.get_array('implicit_distance')
+            implicit_distances_fr = torch.tensor(implicit_distances_fr).to(Kp_fr.device)
+
+            sq_dist, face_indices, closest_points_fr = pymesh.distance_to_mesh(pymesh_mesh, gt_Kp_fr.squeeze().detach().cpu().numpy())
+            closest_points_fr = torch.Tensor(closest_points_fr).to(gt_Kp_fr.device)
+            loss_surf_fr = torch.sum(torch.abs(closest_points_fr - gt_Kp_fr.squeeze()), dim=1)
+            loss_surf_fr[implicit_distances_fr < 0] = 0
+            loss_surf_fr = torch.mean(loss_surf_fr)
+
+            # to
+            kp_grid = pyvista.PolyData(gt_Kp_to.squeeze().cpu().detach().numpy())
+            kp_grid.compute_implicit_distance(pyvista_mesh,inplace=True)
+            implicit_distances_to = kp_grid.get_array('implicit_distance')
+            implicit_distances_to = torch.tensor(implicit_distances_to).to(Kp_to.device)
+
+            sq_dist, face_indices, closest_points_to = pymesh.distance_to_mesh(pymesh_mesh, gt_Kp_to.squeeze().detach().cpu().numpy())
+            closest_points_to = torch.Tensor(closest_points_to).to(gt_Kp_to.device)
+            loss_surf_to = torch.sum(torch.abs(closest_points_to - gt_Kp_to.squeeze()), dim=1)
+            loss_surf_to[implicit_distances_to < 0] = 0
+            loss_surf_to = torch.mean(loss_surf_to)
+
+            loss_surf = (loss_surf_fr + loss_surf_to).contiguous() / 2.0
+
+
 
 
         ############# Separate Loss
-        scale = scale.view(-1)
-        max_rad = torch.norm(scale).item()
+        if self.loss_sep_type == 'euclidean':
+            scale = scale.view(-1)
+            max_rad = torch.norm(scale).item()
 
-        gt_Kp_fr_select1 = torch.index_select(gt_Kp_fr, 1, self.select1).contiguous()
-        gt_Kp_fr_select2 = torch.index_select(gt_Kp_fr, 1, self.select2).contiguous()
-        loss_sep_fr = torch.norm((gt_Kp_fr_select1 - gt_Kp_fr_select2), dim=2).view(-1).contiguous()
-        loss_sep_fr = torch.max(self.zeros, max_rad/8.0 - loss_sep_fr).contiguous()
-        loss_sep_fr = torch.mean(loss_sep_fr).contiguous()
+            gt_Kp_fr_select1 = torch.index_select(gt_Kp_fr, 1, self.select1).contiguous()
+            gt_Kp_fr_select2 = torch.index_select(gt_Kp_fr, 1, self.select2).contiguous()
+            loss_sep_fr = torch.norm((gt_Kp_fr_select1 - gt_Kp_fr_select2), dim=2).view(-1).contiguous()
 
-        gt_Kp_to_select1 = torch.index_select(gt_Kp_to, 1, self.select1).contiguous()
-        gt_Kp_to_select2 = torch.index_select(gt_Kp_to, 1, self.select2).contiguous()
-        loss_sep_to = torch.norm((gt_Kp_to_select1 - gt_Kp_to_select2), dim=2).view(-1).contiguous()
-        loss_sep_to = torch.max(self.zeros, max_rad/8.0 - loss_sep_to).contiguous()
-        loss_sep_to = torch.mean(loss_sep_to).contiguous()
+            # zero separation loss for kps outside the mesh volume
+            #mask1 = implicit_distances_fr[self.select1] <= 0
+            #mask2 = implicit_distances_fr[self.select2] <= 0
+            #mask = (mask1 & mask2).float()
+            #loss_sep_fr = loss_sep_fr * mask
+            #implicit_distances_fr = implicit_distances_fr.float()
+            #loss_sep_fr = loss_sep_fr * torch.exp(-implicit_distances_fr[self.select1]) * torch.exp(-implicit_distances_fr[self.select2])
 
-        loss_sep = (loss_sep_fr + loss_sep_to) / 2.0
+            #thresh = geodesic.max() / (self.num_key/2)
+            thresh = geodesic.max() / 4.
+            loss_sep_fr = torch.max(self.zeros, thresh - loss_sep_fr).contiguous()
+            loss_sep_fr = torch.mean(loss_sep_fr).contiguous()
+
+            gt_Kp_to_select1 = torch.index_select(gt_Kp_to, 1, self.select1).contiguous()
+            gt_Kp_to_select2 = torch.index_select(gt_Kp_to, 1, self.select2).contiguous()
+            loss_sep_to = torch.norm((gt_Kp_to_select1 - gt_Kp_to_select2), dim=2).view(-1).contiguous()
+
+            # zero separation loss for kps outside the mesh volume
+            #mask1 = implicit_distances_to[self.select1] <= 0
+            #mask2 = implicit_distances_to[self.select2] <= 0
+            #mask = (mask1 & mask2).float()
+            #implicit_distances_to = implicit_distances_to.float()
+            #loss_sep_to = loss_sep_to * torch.exp(-implicit_distances_to[self.select1]) * torch.exp(-implicit_distances_to[self.select2])
+
+            #thresh = geodesic.max() / (self.num_key/2)
+            thresh = geodesic.max() / 4.
+            loss_sep_to = torch.max(self.zeros, thresh - loss_sep_to).contiguous()
+            loss_sep_to = torch.mean(loss_sep_to).contiguous()
+
+            loss_sep = (loss_sep_fr + loss_sep_to) / 2.0
+        elif self.loss_sep_type == 'curvature':
+            geodesic = geodesic.squeeze()
+            curvature = curvature.squeeze()
+
+            D = (geodesic + geodesic.t())/2
+            loss_sep = torch.tensor(0.)
+            kp_to_mesh_dist = torch.abs(mesh[:,None,:] - gt_Kp_fr)
+            kp_to_mesh_dist = kp_to_mesh_dist.sum(dim=2) # 500 by 8
+            kp_to_mesh_dist_min, _ = kp_to_mesh_dist.min(dim=0)
+            kp_to_mesh_dist_max, _ = kp_to_mesh_dist.max(dim=0)
+            kp_to_mesh_dist = (kp_to_mesh_dist - kp_to_mesh_dist_min[None,:])/(kp_to_mesh_dist_max[None,:]-kp_to_mesh_dist_min[None,:])
+            kp_to_mesh_dist *= 10
+
+            smax = torch.nn.functional.softmax(-kp_to_mesh_dist,dim=0)
+            smax = smax.transpose(1,0)
+            mu_sum = smax.sum(dim=0)/self.num_key
+
+            curvature = (curvature - curvature.min()) / (curvature.max() - curvature.min())
+            curv_score = (curvature[None,:] * D).sum(dim=1) * 0.1
+            mu_curvature = torch.nn.functional.softmax(curv_score)
+
+            sinkhorn_dist = self.sinkhorn_loss.apply(mu_sum[None,:],mu_curvature[None,:],D)
+
+            loss_sep = sinkhorn_dist.mean()
+        elif self.loss_sep_type == 'coverage':
+            geodesic = geodesic.squeeze()
+            mesh = mesh.squeeze()
+
+            D = (geodesic + geodesic.t())/2
+            kp_to_mesh_dist = torch.abs(mesh[:,None,:] - gt_Kp_fr)
+            kp_to_mesh_dist = kp_to_mesh_dist.sum(dim=2) # 500 by 8
+            kp_to_mesh_dist_min, _ = kp_to_mesh_dist.min(dim=0)
+            kp_to_mesh_dist_max, _ = kp_to_mesh_dist.max(dim=0)
+            kp_to_mesh_dist = (kp_to_mesh_dist - kp_to_mesh_dist_min[None,:])/(kp_to_mesh_dist_max[None,:]-kp_to_mesh_dist_min[None,:])
+            kp_to_mesh_dist *= self.kp_to_mesh_dist_scale
+
+            smax = torch.nn.functional.softmax(-kp_to_mesh_dist,dim=0)
+            smax = smax.transpose(1,0)
+            mu_sum = smax.sum(dim=0)/self.num_key
+
+            n = mu_sum.shape[0]
+            mu_uniform = torch.ones_like(mu_sum)*(1/n)
+            sinkhorn_dist = self.sinkhorn_loss.apply(mu_sum[None,:],mu_uniform[None,:],D,1e-3,100)
+
+            loss_sep = sinkhorn_dist.mean()
+
 
         ########### SUM UP
 

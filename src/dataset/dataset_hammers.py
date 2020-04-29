@@ -1,7 +1,9 @@
 import os
 import pdb
 import math
+import random
 import numpy as np
+import pickle
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
@@ -63,21 +65,18 @@ class Dataset(Dataset):
       val_task_ids_start=0,
       val_task_ids_end=1,
       num_points=500,
-      set_scale_from_mesh=True):
+      set_scale_from_mesh=True,
+      consecutive_frames_only=True,
+      first_frame_only=False):
 
         self.x = 0
         self.dataset_root = dataset_root
-        data_path = os.path.join(dataset_root, 'data.npy')
-        data = np.load(data_path, allow_pickle=True).item()
-        self.state = data['state']
-        self.quat = data['quat']
-        self.pos = data['pos']
-        self.rotation = data['rotation']
-        self.vert = data['vert']
-        self.faces = data['faces']
+
         self.xmap = None
         self.ymap = None
         self.set_scale_from_mesh = set_scale_from_mesh
+        self.consecutive_frames_only = consecutive_frames_only
+        self.first_frame_only = first_frame_only
 
         if set_name == 'train':
             if train_task_ids is not None:
@@ -92,12 +91,18 @@ class Dataset(Dataset):
 
         # num_frames_array snippet from Nvidia UnsupervisedLandmarkLearning
         self.num_frames_array = [0]
+        self.vid_n_frames = []
         for t_id in self.task_ids:
-            dir_path = os.path.join(self.dataset_root, f'{t_id:06d}')
-            # contains depth + rgb for each frame os divide by 2
-            # subtract 1 since frames are returned as neighbouring pairs
-            num_frames = len(os.listdir(dir_path))//2 - 1
-            self.num_frames_array.append(num_frames)
+            if first_frame_only:
+                self.num_frames_array.append(1)
+                self.vid_n_frames.append(1)
+            else:
+                dir_path = os.path.join(self.dataset_root, f'{t_id:06d}')
+                # contains depth + rgb for each frame os divide by 2
+                # subtract 1 since frames are returned as neighbouring pairs
+                num_frames = len(os.listdir(dir_path))//2 - 1
+                self.num_frames_array.append(num_frames)
+                self.vid_n_frames.append(num_frames)
         self.num_frames_array = np.array(self.num_frames_array).cumsum()
 
     def __len__(self):
@@ -168,10 +173,22 @@ class Dataset(Dataset):
     def __getitem__(self, index):
         vid_idx, frame_idx = self.get_frame_index(index)
 
-        rgb_path_fr = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx:06d}.jpg')
-        depth_path_fr = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx:06d}d.tiff')
-        rgb_path_to = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx+1:06d}.jpg')
-        depth_path_to = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx+1:06d}d.tiff')
+        if self.first_frame_only:
+            frame_idx_fr = frame_idx
+            frame_idx_to = frame_idx
+        if self.consecutive_frames_only:
+            frame_idx_fr = frame_idx
+            frame_idx_to = frame_idx + 1
+        else:
+            vid_idx_idx = np.searchsorted(self.num_frames_array, index, side='right')-1
+            vid_n_frames = self.vid_n_frames[vid_idx_idx]
+            frame_idx_fr = frame_idx
+            frame_idx_to = (frame_idx + random.randint(0, vid_n_frames-1)) % vid_n_frames
+
+        rgb_path_fr = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx_fr:06d}.jpg')
+        depth_path_fr = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx_fr:06d}d.tiff')
+        rgb_path_to = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx_to:06d}.jpg')
+        depth_path_to = os.path.join(self.dataset_root, f'{vid_idx:06d}', f'{frame_idx_to:06d}d.tiff')
 
         # img
         img_fr = np.array(Image.open(rgb_path_fr)).transpose((2,0,1))
@@ -189,15 +206,19 @@ class Dataset(Dataset):
         choose_fr, cloud_fr = torch.LongTensor(choose_fr), torch.Tensor(cloud_fr)
         choose_to, cloud_to = torch.LongTensor(choose_to), torch.Tensor(cloud_to)
 
+        # load data file
+        data_path = os.path.join(self.dataset_root, f'{vid_idx:06d}.npy')
+        vid_data = np.load(data_path, allow_pickle=True).item()
+
         # rotation and translation for each
-        r_fr = torch.Tensor(self.rotation[vid_idx,frame_idx,:,:])
-        t_fr = torch.Tensor(self.pos[vid_idx,frame_idx,:])
-        r_to = torch.Tensor(self.rotation[vid_idx,frame_idx+1,:,:])
-        t_to = torch.Tensor(self.pos[vid_idx,frame_idx+1,:])
+        r_fr = torch.Tensor(vid_data['rotation'][frame_idx_fr,:,:])
+        t_fr = torch.Tensor(vid_data['pos'][frame_idx_fr,:])
+        r_to = torch.Tensor(vid_data['rotation'][frame_idx_to,:,:])
+        t_to = torch.Tensor(vid_data['pos'][frame_idx_to,:])
 
         # joint anchor and scale
         if self.set_scale_from_mesh:
-            joint_mesh = np.concatenate((self.vert[vid_idx][frame_idx,:,:], self.vert[vid_idx][frame_idx+1,:,:]),axis=0)
+            joint_mesh = np.concatenate((vid_data['vert'][frame_idx_fr,:,:], vid_data['vert'][frame_idx_to,:,:]),axis=0)
             anchor = torch.zeros(125,3, dtype=torch.float)
             scale = torch.zeros(3, dtype=torch.float)
             a,s = get_anchor_box(joint_mesh)
@@ -212,17 +233,18 @@ class Dataset(Dataset):
         # get cloud to match anchor scale
         cloud_fr = cloud_fr / scale
 
-        # mesh
-        mesh = torch.Tensor(self.vert[vid_idx][frame_idx,:,:])
-        mesh_orig = mesh.clone()
-        # return mesh to canonical pose
-        mesh = torch.mm(mesh - t_fr[None,:], r_fr)
-        faces = torch.LongTensor(self.faces[vid_idx])
-
         # cate is 1
         cate = torch.LongTensor([1])
 
         # state
-        state_fr = torch.Tensor(self.state[vid_idx,frame_idx,:])
+        state_fr = torch.Tensor(vid_data['state'][frame_idx_fr,:])
 
-        return img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate
+        # dense mesh things
+        mesh = torch.Tensor(vid_data['dense_vert'])
+        mesh_orig = torch.mm(mesh, r_fr.t()) + t_fr[None,:]
+        faces = torch.LongTensor(vid_data['dense_faces'])
+        geodesic = torch.Tensor(vid_data['geodesic'])
+        curvature = torch.Tensor(vid_data['curvature'])
+
+
+        return img_fr, choose_fr, cloud_fr, r_fr, t_fr, img_to, choose_to, cloud_to, r_to, t_to, mesh, faces, anchor, scale, cate, geodesic, curvature

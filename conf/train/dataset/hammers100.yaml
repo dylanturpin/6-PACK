@@ -1,21 +1,13 @@
 dataset:
   cls: dataset.dataset_hammers.Dataset
-  name: 'hammers10'
+  name: 'hammers100'
   params:
     dataset_root: '/h/dturpin/datasets/pretrain_6pack_100_remesh/'
     consecutive_frames_only: False
-    train_task_ids:
-      - 1
-      - 2
-      - 3
-      - 4
-      - 5
-      - 7
-      - 9
-      - 10
-      - 12
-      - 39
+    first_frame_only: True
     val_task_ids: []
+    train_task_ids_start: 0
+    train_task_ids_end: 100
     # anchors and scale are calculated from a bbox.
     # when get_bbox_from_mesh is True, the bbox is calculated from
     # the vertices of meshes of adjacent frames.

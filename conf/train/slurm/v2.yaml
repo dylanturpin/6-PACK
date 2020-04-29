@@ -1,0 +1,10 @@
+slurm:
+  gres: gpu:${slurm_additional.gpus}
+  job_name:
+    - 6pack-${dataset.name}-num_kp-${num_kp}-batch_size-${batch_size}-lr-${lr}-gpus-${slurm_additional.gpus}-set_scale_from_mesh-${dataset.params.set_scale_from_mesh}-loss_weights-${loss_term_weights.loss_att_weight}_${loss_term_weights.Kp_dis_weight}_${loss_term_weights.Kp_cent_dis_weight}_${loss_term_weights.loss_rot_weight}_${loss_term_weights.loss_surf_weight}_${loss_term_weights.loss_sep_weight}_${loss_term_weights.kp_to_mesh_dist_scale}-loss_surf_type-${loss_surf_type}_loss_sep_type-${loss_sep_type}
+  partition: gpu
+  cpus_per_task: eval:4*${slurm_additional.gpus}
+  ntasks_per_node: 1
+  mem: eval:str(22*${slurm_additional.gpus})+ 'G'
+  nodes: 1
+  qos: normal
